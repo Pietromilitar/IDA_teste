@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0d1117" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="CodePad" />
+  <title>CodePad IDE</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="shortcut icon" href="/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0d1117;
+      --bg2: #161b22;
+      --bg3: #21262d;
+      --border: #30363d;
+      --accent: #58a6ff;
+      --accent2: #3fb950;
+      --accent3: #f78166;
+      --accent4: #d2a8ff;
+      --accent5: #ffa657;
+      --text: #e6edf3;
+      --text2: #8b949e;
+      --text3: #484f58;
+      --glow: rgba(88, 166, 255, 0.15);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; font-family: 'JetBrains Mono', monospace; background: var(--bg); color: var(--text); }
+    #app { display: grid; grid-template-rows: 48px 1fr 28px; height: 100dvh; }
+    /* TITLEBAR */
+    #titlebar { background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; padding: 0 12px; user-select: none; }
+    #titlebar .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 15px; color: var(--accent); letter-spacing: -0.5px; white-space: nowrap; }
+    #titlebar .logo span { color: var(--accent2); }
+    #tabs { display: flex; gap: 2px; overflow-x: auto; flex: 1; scrollbar-width: none; }
+    #tabs::-webkit-scrollbar { display: none; }
+    .tab { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px 6px 0 0; font-size: 11px; cursor: pointer; color: var(--text2); background: transparent; border: 1px solid transparent; border-bottom: none; transition: all 0.15s; white-space: nowrap; min-width: 80px; }
+    .tab.active { background: var(--bg); border-color: var(--border); color: var(--text); }
+    .tab .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent2); flex-shrink: 0; }
+    .tab .dot.red { background: var(--accent3); }
+    .tab .dot.purple { background: var(--accent4); }
+    .tab-close { margin-left: auto; color: var(--text3); font-size: 13px; line-height: 1; padding: 0 2px; cursor: pointer; transition: color 0.15s; }
+    .tab-close:hover { color: var(--accent3); }
+    #titlebar .actions { display: flex; gap: 4px; margin-left: auto; }
+    .icon-btn { width: 30px; height: 30px; border-radius: 6px; background: none; border: 1px solid var(--border); color: var(--text2); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+    .icon-btn:hover { background: var(--bg3); color: var(--text); }
+    /* BODY */
+    #body { display: grid; grid-template-columns: 220px 1fr 260px; overflow: hidden; }
+    @media (max-width: 700px) {
+      #body { grid-template-columns: 1fr; }
+      #sidebar, #panel { display: none; }
+      #sidebar.open, #panel.open { display: flex; position: fixed; z-index: 10; top: 48px; bottom: 28px; flex-direction: column; }
+      #sidebar.open { left: 0; width: 220px; }
+      #panel.open { right: 0; width: 260px; }
+    }
+    /* SIDEBAR */
+    #sidebar { background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+    .sidebar-header { padding: 8px 12px; font-size: 10px; font-weight: 700; color: var(--text3); letter-spacing: 1.5px; text-transform: uppercase; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .sidebar-header button { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 16px; padding: 2px; }
+    .sidebar-header button:hover { color: var(--accent); }
+    #file-tree { flex: 1; overflow-y: auto; padding: 4px 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+    .folder, .file { display: flex; align-items: center; gap: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; color: var(--text2); transition: background 0.1s, color 0.1s; border-radius: 4px; margin: 1px 4px; }
+    .folder:hover, .file:hover { background: var(--bg3); color: var(--text); }
+    .file.active { background: rgba(88,166,255,0.1); color: var(--accent); }
+    .folder { color: var(--accent5); font-weight: 500; }
+    .file-icon { font-size: 13px; flex-shrink: 0; }
+    .indent { padding-left: 20px; }
+    /* EDITOR */
+    #editor-area { display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+    #editor-wrap { flex: 1; display: flex; overflow: hidden; position: relative; }
+    #line-numbers { padding: 16px 0; text-align: right; font-size: 13px; line-height: 1.6; color: var(--text3); background: var(--bg); border-right: 1px solid var(--border); min-width: 44px; overflow: hidden; user-select: none; }
+    #line-numbers span { display: block; padding: 0 10px 0 6px; }
+    #line-numbers span.hl { color: var(--accent); }
+    #code { flex: 1; padding: 16px 0 16px 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6; color: var(--text); background: transparent; border: none; outline: none; resize: none; overflow-y: auto; overflow-x: auto; tab-size: 2; white-space: pre; scrollbar-width: thin; scrollbar-color: var(--border) transparent; caret-color: var(--accent); }
+    #code::selection { background: rgba(88,166,255,0.25); }
+    /* EDITOR TOOLBAR */
+    #editor-toolbar { background: var(--bg2); border-top: 1px solid var(--border); display: flex; align-items: center; gap: 4px; padding: 4px 10px; flex-wrap: wrap; }
+    .et-btn { padding: 4px 10px; border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 11px; background: var(--bg3); border: 1px solid var(--border); color: var(--text2); cursor: pointer; transition: all 0.15s; }
+    .et-btn:hover { background: var(--accent); border-color: var(--accent); color: #000; }
+    .et-btn.run { background: var(--accent2); border-color: var(--accent2); color: #000; font-weight: 700; }
+    .et-btn.run:hover { filter: brightness(1.15); }
+    .et-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+    #lang-select { margin-left: auto; background: var(--bg3); border: 1px solid var(--border); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 4px 8px; border-radius: 5px; cursor: pointer; }
+    /* RIGHT PANEL */
+    #panel { background: var(--bg2); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+    .panel-tabs { display: flex; border-bottom: 1px solid var(--border); }
+    .ptab { padding: 8px 14px; font-size: 11px; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+    .ptab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    #panel-content { flex: 1; overflow-y: auto; padding: 12px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; display: flex; flex-direction: column; }
+    #output { font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-all; flex: 1; }
+    .output-line { display: block; padding: 1px 0; color: var(--accent2); }
+    .output-line.error { color: var(--accent3); }
+    .output-line.info { color: var(--accent); }
+    .output-line.warn { color: var(--accent5); }
+    .output-prompt { display: flex; align-items: center; gap: 6px; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+    .output-prompt span { color: var(--accent2); font-size: 12px; }
+    #repl-input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; caret-color: var(--accent2); }
+    /* AI panel */
+    #ai-panel { display: none; flex-direction: column; height: 100%; }
+    #ai-panel.active { display: flex; }
+    #output-panel { display: flex; flex-direction: column; height: 100%; }
+    #output-panel.hidden { display: none; }
+    .ai-msg { padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.6; margin-bottom: 8px; }
+    .ai-msg.user { background: rgba(88,166,255,0.1); color: var(--accent); text-align: right; }
+    .ai-msg.bot { background: var(--bg3); color: var(--text); }
+    .ai-msg.bot code { color: var(--accent4); background: rgba(210,168,255,0.1); padding: 1px 4px; border-radius: 3px; }
+    #ai-messages { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+    #ai-input-row { display: flex; gap: 6px; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+    #ai-input { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 11px; outline: none; resize: none; }
+    #ai-input:focus { border-color: var(--accent); }
+    #ai-send { padding: 6px 10px; background: var(--accent); border: none; border-radius: 6px; color: #000; font-weight: 700; font-size: 12px; cursor: pointer; transition: filter 0.15s; }
+    #ai-send:hover { filter: brightness(1.2); }
+    /* STATUSBAR */
+    #statusbar { background: var(--accent); color: #000; display: flex; align-items: center; gap: 12px; padding: 0 12px; font-size: 11px; font-weight: 600; }
+    #statusbar .sep { opacity: 0.4; }
+    #statusbar .right { margin-left: auto; display: flex; gap: 12px; }
+    /* MODAL */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 20px; width: 340px; max-width: 90vw; }
+    .modal h3 { font-family: 'Syne', sans-serif; font-size: 16px; color: var(--text); margin-bottom: 12px; }
+    .modal label { font-size: 11px; color: var(--text2); display: block; margin-bottom: 4px; }
+    .modal input { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; outline: none; margin-bottom: 12px; }
+    .modal input:focus { border-color: var(--accent); }
+    .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-btns button { padding: 6px 16px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--bg3); color: var(--text); transition: all 0.15s; }
+    .modal-btns button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
+    /* MOBILE FABs */
+    #mobile-fabs { display: none; position: fixed; bottom: 40px; right: 14px; flex-direction: column; gap: 8px; z-index: 20; }
+    @media (max-width: 700px) { #mobile-fabs { display: flex; } }
+    .fab { width: 42px; height: 42px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--border); color: var(--text); font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 12px rgba(0,0,0,0.5); transition: all 0.15s; }
+    .fab.run-fab { background: var(--accent2); color: #000; border-color: var(--accent2); }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- TITLEBAR -->
+  <div id="titlebar">
+    <div class="logo">Code<span>Pad</span></div>
+    <div id="tabs">
+      <div class="tab active" data-file="main.js"><span class="dot"></span> main.js <span class="tab-close">×</span></div>
+      <div class="tab" data-file="index.html"><span class="dot red"></span> index.html <span class="tab-close">×</span></div>
+      <div class="tab" data-file="style.css"><span class="dot purple"></span> style.css <span class="tab-close">×</span></div>
+    </div>
+    <div class="actions">
+      <button class="icon-btn" id="btn-new" title="Novo arquivo">＋</button>
+    </div>
+  </div>
+  <!-- BODY -->
+  <div id="body">
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+      <div class="sidebar-header">Explorer <button id="btn-new-file">＋</button></div>
+      <div id="file-tree">
+        <div class="folder">📁 meu-projeto</div>
+        <div class="file active indent" data-file="main.js">🟡 main.js</div>
+        <div class="file indent" data-file="index.html">🔴 index.html</div>
+        <div class="file indent" data-file="style.css">🟣 style.css</div>
+        <div class="file indent" data-file="package.json">⚙️ package.json</div>
+        <div class="file indent" data-file="README.md">📄 README.md</div>
+      </div>
+    </div>
+    <!-- EDITOR -->
+    <div id="editor-area">
+      <div id="editor-wrap">
+        <div id="line-numbers"></div>
+        <textarea id="code" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+      </div>
+      <div id="editor-toolbar">
+        <button class="et-btn run" id="btn-run">▶ Run</button>
+        <div class="et-sep"></div>
+        <button class="et-btn" id="btn-format">{ } Format</button>
+        <button class="et-btn" id="btn-comment">// Toggle</button>
+        <button class="et-btn" id="btn-copy">⎘ Copy</button>
+        <select id="lang-select">
+          <option value="javascript">JavaScript</option>
+          <option value="python">Python</option>
+          <option value="html">HTML</option>
+          <option value="css">CSS</option>
+        </select>
+      </div>
+    </div>
+    <!-- RIGHT PANEL -->
+    <div id="panel">
+      <div class="panel-tabs">
+        <div class="ptab active" data-panel="output">Console</div>
+        <div class="ptab" data-panel="ai">✦ AI Assist</div>
+      </div>
+      <div id="panel-content">
+        <div id="output-panel">
+          <div id="output"></div>
+          <div class="output-prompt">
+            <span>❯</span>
+            <input id="repl-input" placeholder="eval JS aqui..." autocorrect="off" autocapitalize="off" spellcheck="false" />
+          </div>
+        </div>
+        <div id="ai-panel">
+          <div id="ai-messages"></div>
+          <div id="ai-input-row">
+            <textarea id="ai-input" rows="2" placeholder="Pergunte sobre seu código..."></textarea>
+            <button id="ai-send">➤</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- STATUSBAR -->
+  <div id="statusbar">
+    <span id="status-lang">JavaScript</span>
+    <span class="sep">|</span>
+    <span id="status-pos">Ln 1, Col 1</span>
+    <span class="sep">|</span>
+    <span id="status-lines">0 linhas</span>
+    <div class="right">
+      <span id="status-pwa">● PWA</span>
+      <span class="sep">|</span>
+      <span id="status-save">Salvo</span>
+    </div>
+  </div>
+</div>
+
+<!-- MOBILE FABs -->
+<div id="mobile-fabs">
+  <div class="fab" id="fab-files">📁</div>
+  <div class="fab run-fab" id="fab-run">▶</div>
+  <div class="fab" id="fab-panel">⌨</div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal-new">
+  <div class="modal">
+    <h3>Novo Arquivo</h3>
+    <label>Nome do arquivo</label>
+    <input type="text" id="new-file-name" placeholder="exemplo.js" />
+    <div class="modal-btns">
+      <button id="modal-cancel">Cancelar</button>
+      <button class="primary" id="modal-create">Criar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const files = {
+  'main.js': `// Bem-vindo ao CodePad ✦
+// IDE leve que roda no bolso
+
+const greet = (name) => {
+  const msg = \`Olá, \${name}! 🚀\`;
+  console.log(msg);
+  return msg;
+};
+
+// Estruturas de dados
+const stack = [];
+const push = (v) => stack.push(v);
+const pop  = () => stack.pop();
+
+push(10); push(20); push(30);
+console.log('Stack:', stack);
+console.log('Pop:', pop());
+
+// Async / Promise
+const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function run() {
+  console.log('Iniciando...');
+  await delay(300);
+  console.log(greet('Dev'));
+  console.log('Feito! ✓');
+}
+
+run();`,
+  'index.html': `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Meu App</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>Hello World</h1>
+  <p>Editando no CodePad!</p>
+  <script src="main.js"><\/script>
+</body>
+</html>`,
+  'style.css': `/* Reset básico */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0; padding: 0;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  background: #0d1117;
+  color: #e6edf3;
+  line-height: 1.6;
+  padding: 2rem;
+}
+
+h1 {
+  font-size: clamp(1.5rem, 4vw, 2.5rem);
+  color: #58a6ff;
+  margin-bottom: 1rem;
+}`,
+  'package.json': `{
+  "name": "meu-projeto",
+  "version": "1.0.0",
+  "description": "Projeto criado no CodePad",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "license": "MIT"
+}`,
+  'README.md': `# Meu Projeto
+
+Criado com **CodePad** ✦
+
+## Como usar
+\`\`\`bash
+node main.js
+\`\`\`
+
+## Estrutura
+\`\`\`
+meu-projeto/
+├── main.js
+├── index.html
+├── style.css
+└── package.json
+\`\`\``
+};
+
+let activeFile = 'main.js';
+let replHistory = [], replIdx = -1;
+
+const codeEl    = document.getElementById('code');
+const lineNums  = document.getElementById('line-numbers');
+const outputEl  = document.getElementById('output');
+const statusPos = document.getElementById('status-pos');
+const statusLns = document.getElementById('status-lines');
+const statusLang= document.getElementById('status-lang');
+
+function loadFile(name) {
+  if (!files[name]) return;
+  if (activeFile) files[activeFile] = codeEl.value;
+  activeFile = name;
+  codeEl.value = files[name];
+  updateLines();
+  updateStatus();
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.file === name));
+  document.querySelectorAll('#file-tree .file').forEach(f => f.classList.toggle('active', f.dataset.file === name));
+  const ext = name.split('.').pop();
+  const map = { js:'javascript', html:'html', css:'css', json:'javascript', md:'javascript', py:'python' };
+  const lang = map[ext] || 'javascript';
+  document.getElementById('lang-select').value = lang;
+  statusLang.textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
+}
+
+function updateLines() {
+  const lines = codeEl.value.split('\n');
+  const curLine = codeEl.value.substr(0, codeEl.selectionStart).split('\n').length;
+  lineNums.innerHTML = lines.map((_,i) => `<span class="${i+1===curLine?'hl':''}">${i+1}</span>`).join('');
+  statusLns.textContent = `${lines.length} linha${lines.length!==1?'s':''}`;
+}
+
+function updateStatus() {
+  const before = codeEl.value.substr(0, codeEl.selectionStart);
+  const lines = before.split('\n');
+  statusPos.textContent = `Ln ${lines.length}, Col ${lines[lines.length-1].length+1}`;
+  updateLines();
+}
+
+function addOutput(text, type='') {
+  const span = document.createElement('span');
+  span.className = `output-line ${type}`;
+  span.textContent = text;
+  outputEl.appendChild(span);
+  document.getElementById('panel-content').scrollTop = 9999;
+}
+function clearOutput() { outputEl.innerHTML = ''; }
+
+function stringify(v) {
+  if (v === null) return 'null';
+  if (v === undefined) return 'undefined';
+  if (typeof v === 'object') { try { return JSON.stringify(v,null,2); } catch { return String(v); } }
+  return String(v);
+}
+
+function runCode() {
+  clearOutput();
+  const code = codeEl.value;
+  const lang = document.getElementById('lang-select').value;
+  if (lang === 'html') {
+    const win = window.open('','_blank');
+    if (win) { win.document.write(code); win.document.close(); }
+    addOutput('HTML aberto em nova aba ✓', 'info');
+    return;
+  }
+  if (lang !== 'javascript') {
+    addOutput(`Execução de ${lang} não é suportada no browser.`, 'warn');
+    addOutput('Apenas JavaScript pode ser executado aqui.', 'info');
+    return;
+  }
+  const orig = { log: console.log, error: console.error, warn: console.warn, info: console.info };
+  console.log   = (...a) => { addOutput(a.map(stringify).join(' '));         orig.log(...a); };
+  console.error = (...a) => { addOutput(a.map(stringify).join(' '),'error'); orig.error(...a); };
+  console.warn  = (...a) => { addOutput(a.map(stringify).join(' '),'warn');  orig.warn(...a); };
+  console.info  = (...a) => { addOutput(a.map(stringify).join(' '),'info');  orig.info(...a); };
+  try {
+    const fn = new Function(code);
+    const r = fn();
+    if (r instanceof Promise) r.catch(e => addOutput('Promise rejected: '+e.message,'error'));
+  } catch(e) { addOutput('❌ '+e.message,'error'); }
+  finally { Object.assign(console, orig); }
+}
+
+function formatCode() {
+  let indent = 0;
+  const lines = codeEl.value.split('\n').map(l => {
+    l = l.trim();
+    if (l.startsWith('}') || l.startsWith(')') || l.startsWith(']')) indent = Math.max(0,indent-1);
+    const out = '  '.repeat(indent) + l;
+    if (l.endsWith('{') || l.endsWith('(') || l.endsWith('[')) indent++;
+    return out;
+  });
+  codeEl.value = lines.join('\n');
+  updateLines(); flash('Formatado ✓');
+}
+
+function toggleComment() {
+  const s = codeEl.selectionStart, e = codeEl.selectionEnd, v = codeEl.value;
+  const ls = v.lastIndexOf('\n',s-1)+1;
+  const le = v.indexOf('\n',e);
+  const line = v.substring(ls, le===-1?undefined:le);
+  const commented = line.trimStart().startsWith('//');
+  const newLine = commented ? line.replace(/\/\/\s?/,'') : '// '+line;
+  codeEl.value = v.substring(0,ls)+newLine+v.substring(le===-1?v.length:le);
+  updateLines();
+}
+
+function flash(msg) {
+  const s = document.getElementById('status-save');
+  s.textContent = msg;
+  setTimeout(() => s.textContent = 'Salvo', 1500);
+}
+
+// REPL
+const replInput = document.getElementById('repl-input');
+replInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const cmd = replInput.value.trim(); if (!cmd) return;
+    replHistory.unshift(cmd); replIdx = -1;
+    addOutput('❯ '+cmd, 'info');
+    try { const r = eval(cmd); if (r!==undefined) addOutput(stringify(r)); }
+    catch(err) { addOutput(err.message,'error'); }
+    replInput.value = '';
+  }
+  if (e.key === 'ArrowUp') { replIdx=Math.min(replIdx+1,replHistory.length-1); replInput.value=replHistory[replIdx]||''; }
+  if (e.key === 'ArrowDown') { replIdx=Math.max(replIdx-1,-1); replInput.value=replIdx>=0?replHistory[replIdx]:''; }
+});
+
+// PANEL TABS
+document.querySelectorAll('.ptab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.ptab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    const w = t.dataset.panel;
+    document.getElementById('output-panel').classList.toggle('hidden', w!=='output');
+    document.getElementById('ai-panel').classList.toggle('active', w==='ai');
+  });
+});
+
+// AI
+const aiMessages = document.getElementById('ai-messages');
+const aiInput    = document.getElementById('ai-input');
+const aiSend     = document.getElementById('ai-send');
+
+function addAiMsg(text, role) {
+  const div = document.createElement('div');
+  div.className = `ai-msg ${role}`;
+  div.innerHTML = text.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\n/g,'<br>');
+  aiMessages.appendChild(div);
+  aiMessages.scrollTop = aiMessages.scrollHeight;
+}
+addAiMsg('Olá! Sou seu assistente de código ✦\n\nDigite uma pergunta sobre seu código ou programação em geral. Ex:\n• "Explique este código"\n• "Como faço um loop em JS?"\n• "Encontre bugs aqui"', 'bot');
+
+aiSend.addEventListener('click', sendAi);
+aiInput.addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendAi();} });
+
+async function sendAi() {
+  const q = aiInput.value.trim(); if (!q) return;
+  addAiMsg(q,'user'); aiInput.value = ''; aiSend.disabled = true;
+  const thinking = document.createElement('div');
+  thinking.className = 'ai-msg bot'; thinking.textContent = '⏳ Pensando...';
+  aiMessages.appendChild(thinking); aiMessages.scrollTop = aiMessages.scrollHeight;
+  try {
+    const code = codeEl.value.slice(0,1500);
+    const prompt = `Você é um assistente de programação conciso integrado a um IDE mobile chamado CodePad.
+Código atual no editor (${activeFile}):\n\`\`\`\n${code}\n\`\`\`\n\nPergunta: ${q}\n\nResponda de forma direta e clara. Use \`backticks\` para código inline. Máximo 200 palavras.`;
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:1000, messages:[{role:'user',content:prompt}] })
+    });
+    const data = await res.json();
+    const reply = data.content?.[0]?.text || 'Sem resposta.';
+    thinking.innerHTML = reply.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\n/g,'<br>');
+  } catch(err) {
+    thinking.textContent = 'Erro: '+err.message; thinking.style.color='var(--accent3)';
+  } finally { aiSend.disabled=false; aiMessages.scrollTop=aiMessages.scrollHeight; }
+}
+
+// TABS
+document.getElementById('tabs').addEventListener('click', e => {
+  const tab = e.target.closest('.tab'); if (!tab) return;
+  if (e.target.classList.contains('tab-close')) { tab.remove(); return; }
+  loadFile(tab.dataset.file);
+});
+
+document.getElementById('file-tree').addEventListener('click', e => {
+  const file = e.target.closest('.file'); if (!file) return;
+  const name = file.dataset.file;
+  if (!document.querySelector(`.tab[data-file="${name}"]`)) {
+    const t = document.createElement('div');
+    t.className='tab'; t.dataset.file=name;
+    t.innerHTML=`<span class="dot"></span> ${name} <span class="tab-close">×</span>`;
+    document.getElementById('tabs').appendChild(t);
+  }
+  loadFile(name);
+});
+
+// TOOLBAR
+document.getElementById('btn-run').addEventListener('click', runCode);
+document.getElementById('btn-format').addEventListener('click', formatCode);
+document.getElementById('btn-comment').addEventListener('click', toggleComment);
+document.getElementById('btn-copy').addEventListener('click', () => {
+  navigator.clipboard.writeText(codeEl.value).then(()=>flash('Copiado ✓'));
+});
+
+// MODAL
+function openModal() { document.getElementById('modal-new').classList.add('open'); document.getElementById('new-file-name').focus(); }
+document.getElementById('btn-new').addEventListener('click', openModal);
+document.getElementById('btn-new-file').addEventListener('click', openModal);
+document.getElementById('modal-cancel').addEventListener('click', () => document.getElementById('modal-new').classList.remove('open'));
+document.getElementById('modal-create').addEventListener('click', () => {
+  const name = document.getElementById('new-file-name').value.trim(); if (!name) return;
+  files[name] = `// ${name}\n`;
+  const d = document.createElement('div'); d.className='file indent'; d.dataset.file=name; d.textContent='📄 '+name;
+  document.getElementById('file-tree').appendChild(d);
+  document.getElementById('new-file-name').value='';
+  document.getElementById('modal-new').classList.remove('open');
+  loadFile(name);
+});
+document.getElementById('new-file-name').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('modal-create').click(); });
+
+// EDITOR EVENTS
+codeEl.addEventListener('input', () => { files[activeFile]=codeEl.value; updateLines(); });
+codeEl.addEventListener('keyup', updateStatus);
+codeEl.addEventListener('click', updateStatus);
+codeEl.addEventListener('keydown', e => {
+  if (e.key==='Tab') {
+    e.preventDefault();
+    const s=codeEl.selectionStart, en=codeEl.selectionEnd;
+    codeEl.value=codeEl.value.substring(0,s)+'  '+codeEl.value.substring(en);
+    codeEl.selectionStart=codeEl.selectionEnd=s+2; updateLines();
+  }
+  const pairs={'(':')','{':'}','[':']','"':'"',"'":"'",'`':'`'};
+  if (pairs[e.key]) {
+    e.preventDefault();
+    const s=codeEl.selectionStart, en=codeEl.selectionEnd;
+    const sel=codeEl.value.substring(s,en);
+    const ins=e.key+sel+pairs[e.key];
+    codeEl.value=codeEl.value.substring(0,s)+ins+codeEl.value.substring(en);
+    codeEl.selectionStart=codeEl.selectionEnd=s+1+sel.length; updateLines();
+  }
+});
+
+document.getElementById('lang-select').addEventListener('change', e => {
+  statusLang.textContent=e.target.value.charAt(0).toUpperCase()+e.target.value.slice(1);
+});
+
+// MOBILE FABs
+document.getElementById('fab-run').addEventListener('click', runCode);
+document.getElementById('fab-files').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('panel').classList.remove('open');
+});
+document.getElementById('fab-panel').addEventListener('click', () => {
+  document.getElementById('panel').classList.toggle('open');
+  document.getElementById('sidebar').classList.remove('open');
+});
+
+// INIT
+loadFile('main.js');
+addOutput('CodePad IDE v1.0 — pronto ✓', 'info');
+addOutput('Clique ▶ Run para executar o código.', 'info');
+
+// SERVICE WORKER
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => document.getElementById('status-pwa').textContent = '✓ PWA Ativo')
+      .catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
