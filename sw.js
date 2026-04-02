@@ -1,47 +1,34 @@
-const CACHE_NAME = 'codepad-v1';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap'
+const CACHE = 'codepad-v2';
+const STATIC = [
+  '/', '/index.html', '/manifest.json', '/site.webmanifest',
+  '/favicon.ico', '/favicon-16x16.png', '/favicon-32x32.png',
+  '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png',
 ];
 
-// INSTALA e faz cache dos recursos
-self.addEventListener('install', event => {
+self.addEventListener('install', e => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(urlsToCache.filter(u => !u.startsWith('http')));
-    })
-  );
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(STATIC)));
 });
 
-// ATIVA e limpa caches antigos
-self.addEventListener('activate', event => {
-  event.waitUntil(
+self.addEventListener('activate', e => {
+  e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
     )
   );
   self.clients.claim();
 });
 
-// INTERCEPTA requisições — cache first, fallback rede
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request).then(cached => {
+self.addEventListener('fetch', e => {
+  e.respondWith(
+    caches.match(e.request).then(cached => {
       if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (!response || response.status !== 200 || response.type === 'opaque') return response;
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-        return response;
-      }).catch(() => {
-        // Offline fallback
-        return new Response('Offline — CodePad está em cache.', {
-          headers: { 'Content-Type': 'text/plain' }
-        });
-      });
+      return fetch(e.request).then(res => {
+        if (!res || res.status !== 200 || res.type === 'opaque') return res;
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return res;
+      }).catch(() => cached || new Response('Offline', {headers:{'Content-Type':'text/plain'}}));
     })
   );
 });
