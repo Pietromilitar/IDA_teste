@@ -218,23 +218,47 @@ button,select,input,textarea{font-family:inherit;font-size:inherit;}
 .sidebar-title button{background:none;border:none;color:var(--text2);cursor:pointer;padding:2px 4px;border-radius:3px;font-size:14px;}
 .sidebar-title button:hover{background:var(--sidebar-hover);color:var(--text);}
 #file-tree{flex:1;overflow-y:auto;padding-bottom:8px;}
+#file-filter-wrap{padding:4px 8px 8px;}
+#file-filter{
+  width:100%;
+  border:1px solid var(--border);
+  background:var(--input-bg);
+  color:var(--text);
+  border-radius:8px;
+  padding:6px 8px;
+  outline:none;
+  font-size:11px;
+}
+#file-filter:focus{border-color:var(--accent);}
+.sidebar-meta{font-size:10px;color:var(--text2);}
 .tree-folder{
   display:flex;align-items:center;gap:5px;
-  padding:3px 8px 3px 6px;font-size:11px;cursor:pointer;
+  margin:0 8px 4px;
+  padding:5px 8px;font-size:11px;cursor:pointer;
   color:var(--text);font-weight:600;
-  transition:background 0.1s;
+  transition:background 0.1s, transform 0.1s;
+  border-radius:8px;
 }
-.tree-folder:hover{background:var(--sidebar-hover);}
+.tree-folder:hover{background:var(--sidebar-hover);transform:translateX(1px);}
 .tree-folder svg{width:14px;height:14px;flex-shrink:0;fill:var(--orange);stroke:none;}
 .tree-item{
   display:flex;align-items:center;gap:5px;
-  padding:3px 8px 3px 22px;font-size:11px;cursor:pointer;
-  color:var(--text);transition:background 0.1s;
-  border-left:2px solid transparent;
+  margin:0 8px 3px;
+  padding:6px 8px 6px 18px;font-size:11px;cursor:pointer;
+  color:var(--text);transition:background 0.1s, transform 0.1s;
+  border-left:2px solid transparent;border-radius:8px;
 }
-.tree-item:hover{background:var(--sidebar-hover);}
+.tree-item:hover{background:var(--sidebar-hover);transform:translateX(2px);}
 .tree-item.active{background:var(--sidebar-active);border-left-color:var(--sidebar-active-border);}
 .tree-item .fi{width:14px;height:14px;flex-shrink:0;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;}
+.tree-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tree-ext{
+  border:1px solid var(--border);
+  border-radius:999px;
+  font-size:9px;
+  padding:1px 6px;
+  color:var(--text2);
+}
 .fi-js{background:#f7df1e;color:#000;}
 .fi-ts{background:#007acc;color:#fff;}
 .fi-html{background:#e34c26;color:#fff;}
@@ -611,11 +635,14 @@ button,select,input,textarea{font-family:inherit;font-size:inherit;}
   <!-- SIDEBAR -->
   <div id="sidebar">
     <div class="sidebar-title">
-      EXPLORER
+      <span>EXPLORER <span class="sidebar-meta" id="file-count"></span></span>
       <div style="display:flex;gap:2px;">
         <button id="btn-new-file" title="Novo arquivo">+</button>
         <button id="btn-new-folder" title="Nova pasta">📁</button>
       </div>
+    </div>
+    <div id="file-filter-wrap">
+      <input id="file-filter" placeholder="Filtrar arquivos..." autocomplete="off"/>
     </div>
     <div id="file-tree"></div>
   </div>
@@ -681,7 +708,7 @@ button,select,input,textarea{font-family:inherit;font-size:inherit;}
             <div id="preview-toolbar">
               <button class="ptb-btn" id="preview-refresh" title="Atualizar">↻</button>
               <input id="preview-url" value="preview" readonly/>
-              <button class="ptb-btn" id="preview-popout" title="Abrir em nova aba">⬡</button>
+              <button class="ptb-btn" id="preview-fullscreen" title="Tela cheia no app">⤢</button>
             </div>
             <iframe id="preview-frame" sandbox="allow-scripts allow-same-origin"></iframe>
           </div>
@@ -1018,6 +1045,9 @@ let replHistory= [], replIdx = -1;
 let ctxTarget  = null;
 let searchMatches = [], searchIdx = 0;
 
+const STORAGE_KEY = 'codepad.workspace.v1';
+let persistTimer = null;
+
 // ═══════════════════════════════════════════════════════
 //  DOM REFS
 // ═══════════════════════════════════════════════════════
@@ -1057,6 +1087,65 @@ function applySettings() {
   document.getElementById('minimap').style.display = settings.minimap ? '' : 'none';
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  PERSISTÊNCIA LOCAL
+// ═══════════════════════════════════════════════════════
+function persistWorkspace() {
+  try {
+    FILES[activeFile] = code.value;
+    const payload = {
+      files: FILES,
+      activeFile,
+      openTabs,
+      settings,
+      savedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.warn('Falha ao salvar workspace:', err);
+  }
+}
+
+function schedulePersist() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(persistWorkspace, 250);
+}
+
+function restoreWorkspace() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !parsed.files) return false;
+
+    Object.keys(FILES).forEach(k => delete FILES[k]);
+    Object.assign(FILES, parsed.files);
+
+    if (parsed.settings && typeof parsed.settings === 'object') {
+      settings = { ...settings, ...parsed.settings };
+    }
+
+    if (Array.isArray(parsed.openTabs) && parsed.openTabs.length) {
+      openTabs = parsed.openTabs.filter(f => !!FILES[f]);
+      if (!openTabs.length) openTabs = [Object.keys(FILES)[0]];
+    }
+
+    if (parsed.activeFile && FILES[parsed.activeFile]) {
+      activeFile = parsed.activeFile;
+    } else {
+      activeFile = openTabs[0] || Object.keys(FILES)[0];
+    }
+
+    if (!openTabs.includes(activeFile)) openTabs.push(activeFile);
+    return true;
+  } catch (err) {
+    console.warn('Falha ao restaurar workspace:', err);
+    return false;
+  }
+}
+
 // ═══════════════════════════════════════════════════════
 //  LANGUAGE DETECTION
 // ═══════════════════════════════════════════════════════
@@ -1089,6 +1178,11 @@ function fileIconLabel(name) {
 // ═══════════════════════════════════════════════════════
 function renderFileTree() {
   const tree = document.getElementById('file-tree');
+  const filterEl = document.getElementById('file-filter');
+  const query = (filterEl?.value || '').trim().toLowerCase();
+  const allFiles = Object.keys(FILES);
+  const visibleFiles = allFiles.filter(fname => fname.toLowerCase().includes(query));
+  document.getElementById('file-count').textContent = `(${visibleFiles.length})`;
   tree.innerHTML = '';
 
   const folderEl = document.createElement('div');
@@ -1096,11 +1190,12 @@ function renderFileTree() {
   folderEl.innerHTML = `<svg viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg> meu-projeto`;
   tree.appendChild(folderEl);
 
-  Object.keys(FILES).forEach(fname => {
+  visibleFiles.forEach(fname => {
+    const ext = fname.includes('.') ? fname.split('.').pop().toUpperCase() : 'TXT';
     const el = document.createElement('div');
     el.className = 'tree-item' + (fname === activeFile ? ' active' : '');
     el.dataset.file = fname;
-    el.innerHTML = `<span class="fi ${fileIconClass(fname)}">${fileIconLabel(fname)}</span>${fname}`;
+    el.innerHTML = `<span class="fi ${fileIconClass(fname)}">${fileIconLabel(fname)}</span><span class="tree-name">${fname}</span><span class="tree-ext">${ext}</span>`;
     el.addEventListener('click', () => openFile(fname));
     el.addEventListener('contextmenu', e => { e.preventDefault(); showCtxMenu(e, fname); });
     tree.appendChild(el);
@@ -1137,6 +1232,7 @@ function closeTab(fname) {
     if (!openTabs.includes(activeFile)) openTabs.push(activeFile);
   }
   loadFile(activeFile);
+  schedulePersist();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1145,6 +1241,7 @@ function closeTab(fname) {
 function openFile(fname) {
   if (!FILES[fname]) return;
   FILES[activeFile] = code.value;
+  schedulePersist();
   if (!openTabs.includes(fname)) openTabs.push(fname);
   activeFile = fname;
   loadFile(fname);
@@ -1353,16 +1450,17 @@ function renderPreview() {
 }
 
 document.getElementById('preview-refresh').addEventListener('click', renderPreview);
-document.getElementById('preview-popout').addEventListener('click', () => {
+document.getElementById('preview-fullscreen').addEventListener('click', async () => {
   renderPreview();
-  const w = window.open('','_blank');
-  if (w) {
-    let html = FILES['index.html'] || code.value;
-    html = html.replace(/<link[^>]+rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*\/?>/gi,
-      (_,href) => { const f=href.replace(/^\.?\//,''); return FILES[f]?`<style>${FILES[f]}</style>`:_; });
-    html = html.replace(/<script[^>]+src=["']([^"']+)["'][^>]*><\/script>/gi,
-      (_,src) => { const f=src.replace(/^\.?\//,''); return FILES[f]?`<script>${FILES[f]}<\/script>`:_; });
-    w.document.write(html); w.document.close();
+  const pane = document.getElementById('preview-pane');
+  try {
+    if (!document.fullscreenElement) {
+      await pane.requestFullscreen();
+    } else {
+      await document.exitFullscreen();
+    }
+  } catch (err) {
+    addConsole('Não foi possível abrir preview em tela cheia: ' + err.message, 'warn');
   }
 });
 
@@ -1406,6 +1504,7 @@ document.getElementById('close-terminal').addEventListener('click', closeTermina
 // ═══════════════════════════════════════════════════════
 code.addEventListener('input', () => {
   FILES[activeFile] = code.value;
+  schedulePersist();
   updateGutter();
   renderMarkdownIfNeeded();
 });
@@ -1469,6 +1568,7 @@ code.addEventListener('keydown', e => {
 // ═══════════════════════════════════════════════════════
 function saveFile() {
   FILES[activeFile] = code.value;
+  persistWorkspace();
   const sb = document.getElementById('sb-errors');
   const prev = sb.textContent;
   sb.textContent = '✓ Salvo';
@@ -1613,6 +1713,7 @@ document.getElementById('ctx-delete').addEventListener('click', () => {
     if(activeFile && !openTabs.includes(activeFile)) openTabs.push(activeFile);
   }
   if (activeFile) loadFile(activeFile); else { code.value=''; renderFileTree(); renderTabs(); }
+  schedulePersist();
 });
 document.getElementById('ctx-rename').addEventListener('click', () => {
   if (!ctxTarget) return;
@@ -1621,6 +1722,7 @@ document.getElementById('ctx-rename').addEventListener('click', () => {
   openTabs=openTabs.map(f=>f===ctxTarget?newName:f);
   if (activeFile===ctxTarget) activeFile=newName;
   loadFile(activeFile);
+  schedulePersist();
 });
 document.getElementById('ctx-copy-path').addEventListener('click', () => {
   if(ctxTarget) navigator.clipboard.writeText('/meu-projeto/'+ctxTarget);
@@ -1654,11 +1756,15 @@ const FILE_TEMPLATES = {
 
 function createNewFile() {
   const name=document.getElementById('nf-input').value.trim(); if(!name) return;
+  if (FILES[name]) { alert('Já existe um arquivo com esse nome.'); return; }
+  if (/[/\\]/.test(name)) { alert('Use apenas nome de arquivo, sem pastas.'); return; }
   const ext=name.split('.').pop().toLowerCase();
   FILES[name]=FILE_TEMPLATES[ext]||`// ${name}\n`;
+  schedulePersist();
   document.getElementById('nf-overlay').classList.remove('open');
   openTabs.push(name);
   openFile(name);
+  schedulePersist();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1681,12 +1787,12 @@ document.getElementById('settings-overlay').addEventListener('click', e => {
   if(e.target===document.getElementById('settings-overlay')) document.getElementById('settings-overlay').classList.remove('open');
 });
 
-document.getElementById('theme-select').addEventListener('change', e=>{ settings.theme=e.target.value; applySettings(); });
-document.getElementById('font-size-range').addEventListener('input', e=>{ settings.fontSize=+e.target.value; applySettings(); updateGutter(); });
-document.getElementById('line-height-select').addEventListener('change', e=>{ settings.lineHeight=+e.target.value; applySettings(); updateGutter(); });
-document.getElementById('word-wrap-select').addEventListener('change', e=>{ settings.wordWrap=e.target.value; applySettings(); });
-document.getElementById('tab-size-select').addEventListener('change', e=>{ settings.tabSize=+e.target.value; applySettings(); });
-document.getElementById('minimap-select').addEventListener('change', e=>{ settings.minimap=+e.target.value; applySettings(); });
+document.getElementById('theme-select').addEventListener('change', e=>{ settings.theme=e.target.value; applySettings(); schedulePersist(); });
+document.getElementById('font-size-range').addEventListener('input', e=>{ settings.fontSize=+e.target.value; applySettings(); updateGutter(); schedulePersist(); });
+document.getElementById('line-height-select').addEventListener('change', e=>{ settings.lineHeight=+e.target.value; applySettings(); updateGutter(); schedulePersist(); });
+document.getElementById('word-wrap-select').addEventListener('change', e=>{ settings.wordWrap=e.target.value; applySettings(); schedulePersist(); });
+document.getElementById('tab-size-select').addEventListener('change', e=>{ settings.tabSize=+e.target.value; applySettings(); schedulePersist(); });
+document.getElementById('minimap-select').addEventListener('change', e=>{ settings.minimap=+e.target.value; applySettings(); schedulePersist(); });
 
 // ═══════════════════════════════════════════════════════
 //  ACTIVITY BAR
@@ -1698,6 +1804,7 @@ document.getElementById('ab-files').addEventListener('click', ()=>{
 });
 document.getElementById('ab-run').addEventListener('click', runCode);
 document.getElementById('ab-search-btn').addEventListener('click', ()=>{ openSearch(); });
+document.getElementById('file-filter').addEventListener('input', renderFileTree);
 
 // ═══════════════════════════════════════════════════════
 //  TITLEBAR BUTTONS
@@ -1732,12 +1839,15 @@ if ('serviceWorker' in navigator) {
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
+const restoredWorkspace = restoreWorkspace();
 applySettings();
-loadFile('main.ts');
+loadFile(restoredWorkspace ? activeFile : 'main.ts');
 openTerminal();
 switchTermPane('console');
 addConsole('CodePad IDE v2.0 — pronto ✓','ok');
 addConsole('Atalhos: Ctrl+S salvar · Ctrl+F buscar · Ctrl+/ comentar · Ctrl+` terminal','info');
+if (restoredWorkspace) addConsole('Workspace restaurado automaticamente.','ok');
+window.addEventListener('beforeunload', persistWorkspace);
 </script>
 </body>
 </html>
