@@ -1018,6 +1018,9 @@ let replHistory= [], replIdx = -1;
 let ctxTarget  = null;
 let searchMatches = [], searchIdx = 0;
 
+const STORAGE_KEY = 'codepad.workspace.v1';
+let persistTimer = null;
+
 // ═══════════════════════════════════════════════════════
 //  DOM REFS
 // ═══════════════════════════════════════════════════════
@@ -1055,6 +1058,65 @@ function applySettings() {
   gutter.style.fontSize = settings.fontSize + 'px';
   gutter.style.lineHeight = settings.lineHeight;
   document.getElementById('minimap').style.display = settings.minimap ? '' : 'none';
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  PERSISTÊNCIA LOCAL
+// ═══════════════════════════════════════════════════════
+function persistWorkspace() {
+  try {
+    FILES[activeFile] = code.value;
+    const payload = {
+      files: FILES,
+      activeFile,
+      openTabs,
+      settings,
+      savedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.warn('Falha ao salvar workspace:', err);
+  }
+}
+
+function schedulePersist() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(persistWorkspace, 250);
+}
+
+function restoreWorkspace() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !parsed.files) return false;
+
+    Object.keys(FILES).forEach(k => delete FILES[k]);
+    Object.assign(FILES, parsed.files);
+
+    if (parsed.settings && typeof parsed.settings === 'object') {
+      settings = { ...settings, ...parsed.settings };
+    }
+
+    if (Array.isArray(parsed.openTabs) && parsed.openTabs.length) {
+      openTabs = parsed.openTabs.filter(f => !!FILES[f]);
+      if (!openTabs.length) openTabs = [Object.keys(FILES)[0]];
+    }
+
+    if (parsed.activeFile && FILES[parsed.activeFile]) {
+      activeFile = parsed.activeFile;
+    } else {
+      activeFile = openTabs[0] || Object.keys(FILES)[0];
+    }
+
+    if (!openTabs.includes(activeFile)) openTabs.push(activeFile);
+    return true;
+  } catch (err) {
+    console.warn('Falha ao restaurar workspace:', err);
+    return false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1137,6 +1199,7 @@ function closeTab(fname) {
     if (!openTabs.includes(activeFile)) openTabs.push(activeFile);
   }
   loadFile(activeFile);
+  schedulePersist();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1145,6 +1208,7 @@ function closeTab(fname) {
 function openFile(fname) {
   if (!FILES[fname]) return;
   FILES[activeFile] = code.value;
+  schedulePersist();
   if (!openTabs.includes(fname)) openTabs.push(fname);
   activeFile = fname;
   loadFile(fname);
@@ -1406,6 +1470,7 @@ document.getElementById('close-terminal').addEventListener('click', closeTermina
 // ═══════════════════════════════════════════════════════
 code.addEventListener('input', () => {
   FILES[activeFile] = code.value;
+  schedulePersist();
   updateGutter();
   renderMarkdownIfNeeded();
 });
@@ -1469,6 +1534,7 @@ code.addEventListener('keydown', e => {
 // ═══════════════════════════════════════════════════════
 function saveFile() {
   FILES[activeFile] = code.value;
+  persistWorkspace();
   const sb = document.getElementById('sb-errors');
   const prev = sb.textContent;
   sb.textContent = '✓ Salvo';
@@ -1613,6 +1679,7 @@ document.getElementById('ctx-delete').addEventListener('click', () => {
     if(activeFile && !openTabs.includes(activeFile)) openTabs.push(activeFile);
   }
   if (activeFile) loadFile(activeFile); else { code.value=''; renderFileTree(); renderTabs(); }
+  schedulePersist();
 });
 document.getElementById('ctx-rename').addEventListener('click', () => {
   if (!ctxTarget) return;
@@ -1621,6 +1688,7 @@ document.getElementById('ctx-rename').addEventListener('click', () => {
   openTabs=openTabs.map(f=>f===ctxTarget?newName:f);
   if (activeFile===ctxTarget) activeFile=newName;
   loadFile(activeFile);
+  schedulePersist();
 });
 document.getElementById('ctx-copy-path').addEventListener('click', () => {
   if(ctxTarget) navigator.clipboard.writeText('/meu-projeto/'+ctxTarget);
@@ -1654,11 +1722,15 @@ const FILE_TEMPLATES = {
 
 function createNewFile() {
   const name=document.getElementById('nf-input').value.trim(); if(!name) return;
+  if (FILES[name]) { alert('Já existe um arquivo com esse nome.'); return; }
+  if (/[/\\]/.test(name)) { alert('Use apenas nome de arquivo, sem pastas.'); return; }
   const ext=name.split('.').pop().toLowerCase();
   FILES[name]=FILE_TEMPLATES[ext]||`// ${name}\n`;
+  schedulePersist();
   document.getElementById('nf-overlay').classList.remove('open');
   openTabs.push(name);
   openFile(name);
+  schedulePersist();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1681,12 +1753,12 @@ document.getElementById('settings-overlay').addEventListener('click', e => {
   if(e.target===document.getElementById('settings-overlay')) document.getElementById('settings-overlay').classList.remove('open');
 });
 
-document.getElementById('theme-select').addEventListener('change', e=>{ settings.theme=e.target.value; applySettings(); });
-document.getElementById('font-size-range').addEventListener('input', e=>{ settings.fontSize=+e.target.value; applySettings(); updateGutter(); });
-document.getElementById('line-height-select').addEventListener('change', e=>{ settings.lineHeight=+e.target.value; applySettings(); updateGutter(); });
-document.getElementById('word-wrap-select').addEventListener('change', e=>{ settings.wordWrap=e.target.value; applySettings(); });
-document.getElementById('tab-size-select').addEventListener('change', e=>{ settings.tabSize=+e.target.value; applySettings(); });
-document.getElementById('minimap-select').addEventListener('change', e=>{ settings.minimap=+e.target.value; applySettings(); });
+document.getElementById('theme-select').addEventListener('change', e=>{ settings.theme=e.target.value; applySettings(); schedulePersist(); });
+document.getElementById('font-size-range').addEventListener('input', e=>{ settings.fontSize=+e.target.value; applySettings(); updateGutter(); schedulePersist(); });
+document.getElementById('line-height-select').addEventListener('change', e=>{ settings.lineHeight=+e.target.value; applySettings(); updateGutter(); schedulePersist(); });
+document.getElementById('word-wrap-select').addEventListener('change', e=>{ settings.wordWrap=e.target.value; applySettings(); schedulePersist(); });
+document.getElementById('tab-size-select').addEventListener('change', e=>{ settings.tabSize=+e.target.value; applySettings(); schedulePersist(); });
+document.getElementById('minimap-select').addEventListener('change', e=>{ settings.minimap=+e.target.value; applySettings(); schedulePersist(); });
 
 // ═══════════════════════════════════════════════════════
 //  ACTIVITY BAR
@@ -1732,12 +1804,15 @@ if ('serviceWorker' in navigator) {
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
+const restoredWorkspace = restoreWorkspace();
 applySettings();
-loadFile('main.ts');
+loadFile(restoredWorkspace ? activeFile : 'main.ts');
 openTerminal();
 switchTermPane('console');
 addConsole('CodePad IDE v2.0 — pronto ✓','ok');
 addConsole('Atalhos: Ctrl+S salvar · Ctrl+F buscar · Ctrl+/ comentar · Ctrl+` terminal','info');
+if (restoredWorkspace) addConsole('Workspace restaurado automaticamente.','ok');
+window.addEventListener('beforeunload', persistWorkspace);
 </script>
 </body>
 </html>
