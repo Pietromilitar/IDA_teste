@@ -8,6 +8,7 @@ Projeto inicial de uma IDE web leve, focada em uso no navegador (inclusive celul
 - Compilação/transpilação de TypeScript via CDN.
 - Preview para HTML e Markdown.
 - PWA com Service Worker.
+- Estrutura separada em arquivos (`index.html`, `style.css`, `app.js`).
 
 ## Melhorias recentes
 - **Persistência automática de workspace** via `localStorage`.

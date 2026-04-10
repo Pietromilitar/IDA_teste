@@ -1,6 +1,6 @@
 const CACHE = 'codepad-v2';
 const STATIC = [
-  '/', '/index.html', '/manifest.json', '/site.webmanifest',
+  '/', '/index.html', '/style.css', '/app.js', '/manifest.json', '/site.webmanifest',
   '/favicon.ico', '/favicon-16x16.png', '/favicon-32x32.png',
   '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png',
 ];
